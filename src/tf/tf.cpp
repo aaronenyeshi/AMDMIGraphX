@@ -432,10 +432,11 @@ struct tf_parser
             std::vector<size_t> input_dims{args[0]->get_shape().lens()};
             op.lengths[0] = input_dims[2];
             op.lengths[1] = input_dims[3];
-            auto l0 = prog.add_instruction(op, args.front());
-            if (keep_dims)
+            auto l0       = prog.add_instruction(op, args.front());
+            if(keep_dims)
                 return l0;
-            return prog.add_instruction(op::squeeze{std::vector<int64_t>(hw_axes.begin(), hw_axes.end())}, l0);
+            return prog.add_instruction(
+                op::squeeze{std::vector<int64_t>(hw_axes.begin(), hw_axes.end())}, l0);
         }
         MIGRAPHX_THROW("MIGraphX does not support mean outside of GlobalAvgPool transformation");
     }
