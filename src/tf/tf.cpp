@@ -126,6 +126,7 @@ struct tf_parser
         add_mem_op("Pack", &tf_parser::parse_pack);
         add_mem_op("Pad", &tf_parser::parse_pad);
         add_mem_op("Reshape", &tf_parser::parse_reshape);
+        add_mem_op("Shape", &tf_parser::parse_shape);
         add_mem_op("Softmax", &tf_parser::parse_softmax);
         add_mem_op("Squeeze", &tf_parser::parse_squeeze);
         add_mem_op("StridedSlice", &tf_parser::parse_stridedslice);
@@ -551,17 +552,20 @@ struct tf_parser
         return prog.add_instruction(op, args[0]);
     }
 
-    void parse_from(std::istream& is)
+    // Use a literal instruction to replace the shape since, output of
+    // shape operator are literals in migraphx
+    instruction_ref
+    parse_shape(const std::string&, const attribute_map&, std::vector<instruction_ref> args)
     {
-        tensorflow::GraphDef graph;
-        if(graph.ParseFromIstream(&is))
-        {
-            this->parse_graph(graph);
-        }
-        else
-        {
-            throw std::runtime_error("Failed reading tf file");
-        }
+        if(args.size() != 1)
+            MIGRAPHX_THROW("Shape: operator should have 1 operand");
+        std::vector<std::size_t> arg_shape = args[0]->get_shape().lens();
+        std::vector<int32_t> vec_shape(arg_shape.size());
+        migraphx::shape s(migraphx::shape::int32_type, {arg_shape.size()});
+        std::transform(arg_shape.begin(), arg_shape.end(), vec_shape.begin(), [](auto i) {
+            return int32_t(i);
+        });
+        return prog.add_literal(migraphx::literal{s, vec_shape});
     }
 
     instruction_ref
@@ -633,6 +637,19 @@ struct tf_parser
 
         auto l0 = prog.add_instruction(op, args[0]);
         return prog.add_instruction(op::squeeze{squeeze_axes}, l0);
+    }
+
+    void parse_from(std::istream& is)
+    {
+        tensorflow::GraphDef graph;
+        if(graph.ParseFromIstream(&is))
+        {
+            this->parse_graph(graph);
+        }
+        else
+        {
+            throw std::runtime_error("Failed reading tf file");
+        }
     }
 
     void parse_graph(const tensorflow::GraphDef& graph)
@@ -964,7 +981,7 @@ struct tf_parser
         std::transform(input_dims.begin(),
                        input_dims.end(),
                        std::back_inserter(dims),
-                       [](const tensorflow::TensorShapeProto_Dim& dim) { return dim.size(); });
+                       [](const tensorflow::TensorShapeProto_Dim& dim) -> int{ if (dim.size() == -1) return 1; return dim.size(); });
         return dims;
     }
 
